@@ -82,7 +82,7 @@ class ConceptEmbedModel():
             phrase_seq_lengths.append(len(tokens))
         return np.array(phrase_vec_list), np.array(phrase_seq_lengths), np.array(global_context_list)
 
-    def __init__(self, config, word_model, casi_test, exp2id, id2exp):
+    def __init__(self, config, word_model, casi_test, exp2id, id2exp, temperature):
             # ************** Initialize variables ***************** #
         tf.reset_default_graph()
         with tf.Graph().as_default():
@@ -101,6 +101,7 @@ class ConceptEmbedModel():
         self.id2exp = id2exp
         self.distance_dict = {}
         self.config.concepts_size = len(self.id2exp)
+        self.temperature = temperature
         # ************** Initialize matrix dimensions ***************** #
 
         self.label = tf.placeholder(tf.int32, shape=[None])
@@ -147,8 +148,13 @@ class ConceptEmbedModel():
         init_op = tf.global_variables_initializer() 
         self.saver = tf.train.Saver()
         self.sess = tf.Session()
-        self.saver.restore(self.sess, "{}/checkpoints/{}/{}".format(self.config.output, self.abbr, self.abbr))
-        print("Model restored.")
+        if self.temperature:
+            restore_path = "{}/checkpoints/{}/{}_best_validation_{}".format((self.config.output, self.abbr, self.abbr, self.temperature))
+        else:
+            restore_path = "{}/checkpoints/{}/{}".format(self.conn
+fig.output, self.abbr, self.abbr)
+        self.saver.restore(self.sess, restore_path) 
+        print("Model restored from {}.".format(restore_path))
 
     def get_probs(self, samples, source):
         seq, seq_len, g = self.phrase2vec(samples, self.config.max_sequence_length, source)
@@ -214,7 +220,7 @@ class ConceptEmbedModel():
         return results
  
 
-def run_testset(args, exp2id, id2exp, casi_test, mimic_test, word_model):
+def run_testset(args, exp2id, id2exp, casi_test, mimic_test, word_model, temperature=None):
    
     model = ConceptEmbedModel(args, word_model, casi_test, exp2id, id2exp)
 
