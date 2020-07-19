@@ -25,7 +25,7 @@ def read_word_weightings(idf_dict):
 idfWeights_dict = "word_weighting_dict.txt"
 IDF_WEIGHTS = read_word_weightings(idfWeights_dict)
 
-
+#np.random.seed(SEED)
 class ConceptEmbedModel():
     def phrase2vec(self, phrase_list, max_length):
         phrase_vec_list = []
@@ -51,14 +51,14 @@ class ConceptEmbedModel():
                 doc_right = content[-4].split()
             doc_left = doc_left.split()
 
-            num_right = min(20, len(doc_right))
-            num_left = min(20, len(doc_left))
-
+            num_right = min(30, len(doc_right))
+            num_left = min(30, len(doc_left))
+            # doc = doc_left + doc_right
             doc_right = doc_right[:num_right]
             doc_left = doc_left[len(doc_left)-num_left:]
-            doc = doc_left + doc_right
+            #doc = doc_left + doc_right
             #########################################
-            #doc = content[-4].split()
+            doc = content[-4].split()
             for z in doc:
                 try:
                     current_word_weighting = IDF_WEIGHTS[z]
@@ -81,7 +81,7 @@ class ConceptEmbedModel():
             phrase_seq_lengths.append(len(tokens))
         return np.array(phrase_vec_list), np.array(phrase_seq_lengths), np.array(global_context_list)
 
-    def __init__(self, config, data_train, word_model, casi_test, exp2id, id2exp):
+    def __init__(self, config, data_train, word_model, casi_test, exp2id, id2exp, temperature):
         # ************** Initialize variables ***************** #
         tf.reset_default_graph()
         with tf.Graph().as_default():
@@ -165,7 +165,6 @@ class ConceptEmbedModel():
                 self.cui_probs[key][key] = 0
                 prob_data[key][key] = [0, 0]
 
-        
         if config.use_relatives:
             for expansion in sorted(self.data_train):
                 if expansion not in train_data:
@@ -180,8 +179,9 @@ class ConceptEmbedModel():
                     prob_data[expansion][relative] = [distance_to_exp, confidence]
                     self.cui_probs[expansion][relative] = confidence
 #####################
+         
         sampled_trainining_data ={}
-        for i in list(self.id2exp.keys()):
+        for i in sorted(list(self.id2exp.keys())):
             key = self.id2exp[i]
             sampled_trainining_data[key] = []
             if len(self.data_train[key]['expansion']) == 0 and not self.config.use_relatives:
@@ -191,7 +191,7 @@ class ConceptEmbedModel():
             cuis = []
             cuis_probs = []
             prob_sum = 0
-            for cui in self.cui_probs[key]:
+            for cui in sorted(self.cui_probs[key]):
                 if cui != key and not self.config.use_relatives:
                     continue
                 cuis.append(cui)
@@ -200,7 +200,9 @@ class ConceptEmbedModel():
             if prob_sum == 0:
                 continue
             cuis_probs = [i/prob_sum for i in cuis_probs]
+            #print(cuis_probs); import sys; sys.exit(0)
             sampling = np.random.choice(cuis, int(self.ns*0.6), p=cuis_probs, replace=True)
+            #print(sampling[:10]); import sys; sys.exit(0)
             sampling_count = {}
             sampling_count[key] = {}
             for relative in sampling:
@@ -240,18 +242,14 @@ class ConceptEmbedModel():
                 training_labels.append(self.exp2id[label])
 
 
-
-        log_dir_path = os.path.join(self.config.output, "val_logfilee
-s")
-        if not os.path.isdir(global_dir_path):
+        log_dir_path = os.path.join(self.config.output, "val_logfiles")
+        if not os.path.isdir(log_dir_path):
             os.makedirs(log_dir_path)
         log_dir_abbr = '{}/{}/'.format(log_dir_path, self.abbr)
         if not os.path.isdir(log_dir_abbr):
             os.makedirs(log_dir_abbr)
-        log_file_path = "{}_relative_stats_{}.txt".format(self.abbr, self.tt
-emperature)
-        with open(os.path.join(log_dir_abbr, log_file_path), 'w') ass
- g:
+        log_file_path = "{}_relative_stats_{}.txt".format(self.abbr, self.temperature)
+        with open(os.path.join(log_dir_abbr, log_file_path), 'w') as g:
             for key in training_data_stats:
                 if key in num_samples_:
                     g.write("{}\t{}\n".format(key, num_samples_[key]))
@@ -312,22 +310,9 @@ emperature)
         # ************** Compute dense ancestor matrix from LIL matrix format ***************** #
 
         # ************** Encoder for sentence embeddings ***************** #
-        #layer1 = tf.layers.conv1d(self.seq, self.config.cl1, 1, activation=tf.nn.elu, \
-         #                         kernel_initializer=tf.random_normal_initializer(0.0, 0.1, seed=SEED), \
-          #                        bias_initializer=tf.random_normal_initializer(stddev=0.01, seed=SEED), use_bias=True)
         layer1 = tf.layers.conv1d(self.seq, 100, 1, activation=tf.nn.elu, \
                                   kernel_initializer=tf.initializers.he_normal(seed=SEED), \
                                   bias_initializer=tf.initializers.he_normal(seed=SEED), use_bias=True)
-        #layer2 = tf.layers.dense(tf.reduce_max(layer1, [1]), self.config.cl2, activation=tf.nn.relu, \
-         #                        kernel_initializer=tf.random_normal_initializer(0.0, stddev=0.1, seed=SEED),
-          #                       bias_initializer=tf.random_normal_initializer(0.0, stddev=0.01, seed=SEED),
-           #                      use_bias=True)
-        #red_max = tf.reduce_max(layer1, [1])
-        
-       # layer2 = tf.layers.dense(tf.concat([tf.reduce_max(layer1, [1]), self.g], 1), 200, activation=tf.nn.relu, \
-        #                         kernel_initializer=tf.initializers.he_normal(seed=SEED),
-         #                        bias_initializer=tf.initializers.he_normal(seed=SEED),
-          #                       use_bias=True)
         if self.config.globalcontext:
             layer2 = tf.layers.dense(tf.concat([tf.reduce_max(layer1, [1]), self.g], 1), 50, activation=tf.nn.relu, \
                                  kernel_initializer=tf.initializers.he_normal(seed=SEED),
@@ -340,18 +325,13 @@ emperature)
                                  use_bias=True)
         self.seq_embedding = tf.nn.l2_normalize(layer2, axis=1)
         # ************** Concept embeddings ***************** #
-        #self.embeddings = tf.get_variable("embeddings", shape=[self.config.concepts_size, self.config.cl2],
-         #                                 initializer=tf.random_normal_initializer(stddev=0.1, seed=SEED))
         self.embeddings = tf.get_variable("embeddings", shape=[self.config.concepts_size, 50],
-                                          initializer=tf.random_normal_initializer(stddev=1e-1, seed=SEED))
+                                          initializer=tf.random_normal_initializer(stddev=1e-1, seed=SEED), dtype=tf.float32)
         aggregated_w = self.embeddings
 
         last_layer_b = tf.get_variable('last_layer_bias', shape=[self.config.concepts_size],
-                                       initializer=tf.random_normal_initializer(stddev=1e-1, seed=SEED))
-        #last_layer_b = tf.get_variable('last_layer_bias', shape=[self.config.concepts_size],
-         #                              initializer=tf.initializers.he_normal(seed=SEED))
+                                       initializer=tf.random_normal_initializer(stddev=1e-1, seed=SEED), dtype=tf.float32)
         self.score_layer = tf.matmul(self.seq_embedding, tf.transpose(aggregated_w)) + last_layer_b
-        #self.score_layer = tf.matmul(layer2, tf.transpose(aggregated_w)) + last_layer_b
         # ************** Loss ***************** #
         self.loss = tf.reduce_mean(tf.losses.sparse_softmax_cross_entropy(self.label,
                                                                           self.score_layer))  # + reg_constant*tf.reduce_sum(reg_losses)
@@ -361,7 +341,6 @@ emperature)
 
         # ************** Backprop ***************** #
         self.train_step = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
-        #self.train_step = tf.train.MomentumOptimizer(self.lr, 0.9).minimize(self.loss)
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
         self.sess.run(tf.global_variables_initializer())
         self.saver = tf.train.Saver()
@@ -391,11 +370,9 @@ emperature)
                           self.is_training: True}
             _, batch_loss = self.sess.run([self.train_step, self.loss], feed_dict=batch_feed)
             report_loss_train += batch_loss
-        log_dir_path = os.path.join(self.config.output, "val_logfilee
-s")
+        log_dir_path = os.path.join(self.config.output, "val_logfiles")
         log_dir_abbr = '{}/{}/'.format(log_dir_path, self.abbr)
-        log_file_path = "{}_verbose_{}.txt".format(self.abbr, self.tt
-emperature)
+        log_file_path = "{}_verbose_{}.txt".format(self.abbr, self.temperature)
         f = open(os.path.join(log_dir_abbr, log_file_path), 'a')
         f.write("{} Epoch temp_val: {}".format(epoch, self.temperature) + '\n')
         if report_len_train > 0:
@@ -408,7 +385,6 @@ emperature)
         val_size = self.val_samples['seq'].shape[0]
         shuffled_indecies = shuffle(list(range(val_size)), random_state=SEED)
         
-        #random.shuffle(shuffled_indecies)
         while head < val_size:
             ending = min(val_size, head + self.config.batch_size)
             batch = {}
@@ -484,20 +460,6 @@ emperature)
 
             if label == ground_truth:
                 score += 1
-            if self.config.verbose:
-                                
-                if mimic:
-                    log_dir_path = os.path.join(self.config.output, "val_logfiles")
-                    if not os.path.isdir(global_dir_path):
-                        os.makedirs(log_dir_path)
-                    log_dir_abbr = '{}/{}/'.format(log_dir_path, self.abbr)
-                    if not os.path.isdir(log_dir_abbr):
-                        os.makedirs(log_dir_abbr)
-                    log_file_path = "{}_verbose_{}.txt".format(self.abbr, self.temperature)
-                    with open(os.path.join(log_dir_abbr, log_file_path), 'a') as g:
-                        g.write("mimic" + "|" + str(tmp_res[0]) + " |" + str(label) + "|" + pred + "|" + str(ground_truth)  + "|" + ground_truth_label + '\n')
-                else:
-                    print("casi" + "|" + str(tmp_res[0]) + " |" + str(label) + "|" + pred + "|" + str(ground_truth)  + "|" + ground_truth_label)
             total += 1
             counter += 1
         results[source][abbr] = [score, total]
