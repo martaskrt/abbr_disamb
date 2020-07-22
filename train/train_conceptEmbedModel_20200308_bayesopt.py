@@ -10,12 +10,12 @@ import os
 import json
 import fasttext as fastText
 import pickle
-#import tensorflow as tf
+import tensorflow as tf
 #from tqdm import tqdm
 #import matplotlib.pyplot as plt
 from sklearn.utils import shuffle
 from timeit import timeit
-#import run_testset_20200308_ctrl as run_testset
+import run_testset_20200308_ctrl as run_testset
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 # The GPU id to use, usually either "0" or "1" or "2", "3";
 #os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -157,6 +157,7 @@ def main():
     print("ABBREVIATION BEING MODELLED: " + args.abbr)
     data_train = {}
     rel2exp = {}
+    exps_present = set()
     with open(args.datafile) as file_handle:
         for line in file_handle:
             content = line[:-1].split("|")
@@ -166,6 +167,7 @@ def main():
             distance = float(content[1])
             relative = content[2]
             rel2exp[relative] = closest_exp
+            exps_present.add(closest_exp)
             if closest_exp not in data_train:
                 data_train[closest_exp] = {'expansion': [], 'relative': {}}
             if closest_exp == relative:
@@ -178,31 +180,41 @@ def main():
     all_exps = None
     if args.train_full:
         all_exps = set()
+        with open("/hpf/projects/brudno/marta/mimic_rs_collection/THE_MODELS/20200528_bayesopt_global_3w_100dim_mimicexps/global_info/{}_global_info.txt".format(args.abbr)) as f_handle:
+            for line in f_handle:
+                if "id2exp" in line:
+                    import ast
+                    content = line[:-1].split(":::")[1]
+                    exps_to_keep = list(ast.literal_eval(content).values())
+        print(exps_present)
+        print(exps_to_keep)
         all_acronyms_path = "/hpf/projects/brudno/marta/mimic_rs_collection/all_allacronym_expansions/allacronyms_training_mimic_rs_dataset_20191105"
         all_acronyms_file = "{}_rs_close_umls_terms_20190910.txt".format(args.abbr)
-        with open("/hpf/projects/brudno/marta/mimic_rs_collection/all_allacronym_expansions/merge_expansions_20191031_final.pickle", 'rb') as pickle_hande:
-            all_abbr2exp = pickle.load(pickle_handle)
-        with open(os.path.join(all_acronyms_path, all_acronyms_file)) as z:
-            for line in z:
-                content = line[:-1].split("|")
-                closest_exp = content[0].replace(",", "")
-                if closest_exp not in all_abbr2exp:
-                    continue
-                if closest_exp in data_train:
-                    continue
-                all_exps.add(closest_exp)
-                distance = float(content[1])
-                relative = content[2]
-                rel2exp[relative] = closest_exp
-                if closest_exp not in data_train:
-                    data_train[closest_exp] = {'expansion': [], 'relative': {}}
-                if closest_exp == relative:
-                    data_train[closest_exp]['expansion'].append(line[:-1])
-                else:
-                    if (relative, distance) not in data_train[closest_exp]['relative']:
-                        data_train[closest_exp]['relative'][(relative,distance)] = []
-                    data_train[closest_exp]['relative'][(relative,distance)].append(line[:-1])
-                
+        try:
+            with open(os.path.join(all_acronyms_path, all_acronyms_file)) as z:
+                print(os.path.join(all_acronyms_path, all_acronyms_file))
+                for line in z:
+                    content = line[:-1].split("|")
+                    closest_exp = content[0].replace(",", "")
+                    if closest_exp not in exps_to_keep:
+                        continue
+                    if closest_exp in exps_present:
+                        continue
+                    all_exps.add(closest_exp)
+                    distance = float(content[1])
+                    relative = content[2]
+                    rel2exp[relative] = closest_exp
+                    if closest_exp not in data_train:
+                        data_train[closest_exp] = {'expansion': [], 'relative': {}}
+                    if closest_exp == relative:
+                        data_train[closest_exp]['expansion'].append(line[:-1])
+                    else:
+                        if (relative, distance) not in data_train[closest_exp]['relative']:
+                            data_train[closest_exp]['relative'][(relative,distance)] = []
+                        data_train[closest_exp]['relative'][(relative,distance)].append(line[:-1])
+        except:
+            all_exps = None
+    print(all_exps)        
     casi_test, exp2id, id2exp = load_data(args, all_exps)
     #for closest_exp in sorted(data_train):
      #   for exp in sorted(data_train[closest_exp]['relative']):
