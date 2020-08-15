@@ -86,13 +86,17 @@ class ConceptEmbedModel():
         train_data = {}
         test_data = {}
         valid_data = {}
-        self.outputdir = config.outputdir
+        self.outputdir = config.output
         self.ckpt_dir = '{}/checkpoints/'.format(self.outputdir)
         self.save_dir = '{}/'.format(self.ckpt_dir)
         if not os.path.isdir(self.save_dir):
             os.makedirs(self.save_dir)
         self.save_path = os.path.join(self.save_dir, 'best_validation')       
-     
+
+        with open(os.path.join(self.outputdir, "cui2id_ncr.pickle"), 'wb') as fhandle:
+            pickle.dump(self.cui2id, fhandle)
+        with open(os.path.join(self.outputdir, "id2cui_ncr.pickle"), 'wb') as fhandle:
+            pickle.dump(self.id2cui, fhandle)
         sampled_buckets = {}
         num_samples_ = {}
         for key in sorted(self.data_train):
@@ -128,14 +132,12 @@ class ConceptEmbedModel():
                 val_labels.append(self.cui2id[key])
 
         self.training_samples = {}
-        self.training_samples['seq'], self.training_samples['seq_len'] = self.phrase2vec(training_samples,
-                                                                                     self.config.max_sequence_length)
+        self.training_samples['seq'], self.training_samples['seq_len'], self.training_samples['g'] = self.phrase2vec(training_samples, self.config.max_sequence_length)
         self.training_samples['label'] = np.array(training_labels)
         print("training data loaded")
 
         self.val_samples = {}
-        self.val_samples['seq'], self.val_samples['seq_len'] = self.phrase2vec(val_samples,
-                                                                               self.config.max_sequence_length)
+        self.val_samples['seq'], self.val_samples['seq_len'], self.val_samples['g'] = self.phrase2vec(val_samples, self.config.max_sequence_length)
         self.val_samples['label'] = np.array(val_labels)
 
         print("validation data loaded")
@@ -208,7 +210,7 @@ class ConceptEmbedModel():
         report_loss_train = 0
         report_len_train = 0
         head = 0
-        training_size = self.training_samples.shape[0]
+        training_size = self.training_samples['seq'].shape[0]
         print("training_size::{}".format(training_size))
         shuffled_indecies = shuffle(list(range(training_size)), random_state=SEED)
         random.shuffle(shuffled_indecies)
@@ -236,7 +238,7 @@ class ConceptEmbedModel():
         report_loss_val = 0
         report_len_val = 0
         head = 0
-        val_size = self.val_samples.shape[0]
+        val_size = self.val_samples['seq'].shape[0]
         shuffled_indecies = shuffle(list(range(val_size)), random_state=SEED)
         
         while head < val_size:
@@ -254,14 +256,18 @@ class ConceptEmbedModel():
                           self.is_training: True}
             _, batch_loss = self.sess.run([self.pred, self.loss], feed_dict=batch_feed)
             report_loss_val += batch_loss
+        if epoch == 0:
+            self.saver.save(sess=self.sess, save_path=self.save_path)
         if report_len_val > 0:
             #print(str(epoch) + " Epoch loss: " + str(report_loss_val / report_len_val))
+            
             self.valLoss_array.append(report_loss_val / report_len_val)
             curr_val_loss = report_loss_val / report_len_val   
             if curr_val_loss < self.best_val_acc:
-                self.best_val_acc = curr_val_loss
+                if report_len_val > 0:
+                    self.best_val_acc = curr_val_loss
+                    improved_str = "*"
                 self.saver.save(sess=self.sess, save_path=self.save_path)
-                improved_str = "*"
             else:
                 improved_str = ""
             print("{} Epoch loss: {} {}".format(epoch, curr_val_loss, improved_str))
